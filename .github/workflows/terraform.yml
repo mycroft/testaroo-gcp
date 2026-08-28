@@ -2,73 +2,30 @@ name: terraform
 
 on:
   pull_request:
-    paths: ["backend/**", "oidc/**", "workspace/**", ".github/workflows/terraform.yml"]
   push:
     branches: [main]
-    paths: ["backend/**", "oidc/**", "workspace/**", ".github/workflows/terraform.yml"]
 
-permissions:
-  contents: read
-  id-token: write       # Workload Identity Federation (pas de clé JSON)
-  pull-requests: write  # commentaire du plan sur la PR
-
-env:
-  TF_IN_AUTOMATION: "true"
-  TF_INPUT: "0"
-
+# Ordre = dépendances : backend (bucket de state) -> oidc (SA, APIs, IAM) -> stacks applicatives.
 jobs:
-  terraform:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - stack: backend
-            sa_secret: GCP_SERVICE_ACCOUNT
-          - stack: oidc
-            sa_secret: GCP_SERVICE_ACCOUNT
-          - stack: workspace
-            sa_secret: GCP_WORKSPACE_SERVICE_ACCOUNT
-    defaults:
-      run:
-        working-directory: ${{ matrix.stack }}
-    concurrency:
-      group: terraform-${{ matrix.stack }}
-      cancel-in-progress: false
+  backend:
+    uses: ./.github/workflows/tf-stack.yml
+    secrets: inherit
+    with:
+      stack: backend
+      sa_secret: GCP_SERVICE_ACCOUNT
 
-    steps:
-      - uses: actions/checkout@v4
+  oidc:
+    needs: backend
+    uses: ./.github/workflows/tf-stack.yml
+    secrets: inherit
+    with:
+      stack: oidc
+      sa_secret: GCP_SERVICE_ACCOUNT
 
-      - uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets[matrix.sa_secret] }}
-
-      - uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.9.x"
-          terraform_wrapper: false
-
-      - run: terraform fmt -check -recursive
-      - run: terraform init
-      - run: terraform validate
-
-      - name: terraform plan
-        id: plan
-        run: terraform plan -no-color -out=tfplan | tee plan.txt
-
-      - name: Comment plan on PR
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const plan = fs.readFileSync('${{ matrix.stack }}/plan.txt', 'utf8').slice(-60000);
-            await github.rest.issues.createComment({
-              ...context.repo,
-              issue_number: context.issue.number,
-              body: `### terraform plan — \`${{ matrix.stack }}\`\n<details><summary>Afficher</summary>\n\n\`\`\`\n${plan}\n\`\`\`\n</details>`,
-            });
-
-      - name: terraform apply
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: terraform apply -auto-approve tfplan
+  workspace:
+    needs: oidc
+    uses: ./.github/workflows/tf-stack.yml
+    secrets: inherit
+    with:
+      stack: workspace
+      sa_secret: GCP_WORKSPACE_SERVICE_ACCOUNT

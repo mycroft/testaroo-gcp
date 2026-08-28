@@ -7,7 +7,7 @@ Bac à sable Terraform sur le projet GCP `mkz-me`, avec plan automatique sur PR 
 - `backend/` — bucket GCS `mkz-me-tfstate` qui héberge le state de toutes les stacks (versioning + rétention 20 versions, accès public interdit, `prevent_destroy`).
 - `oidc/` — Workload Identity Federation : pool + provider OIDC GitHub restreint au dépôt, service account `github-terraform` impersonable par le repo, rôles projet et accès au bucket de state.
 - `workspace/` — groupes Google Workspace du domaine `au-tapas-ecossais.com` via le provider `googleworkspace`, module `modules/group` calqué sur `tf-it`. Impersonne le SA dédié `github-workspace` (aucun rôle GCP, rôle Groups Admin côté Workspace).
-- `.github/workflows/terraform.yml` — `fmt`/`init`/`validate`/`plan` sur PR (plan posté en commentaire), `apply` sur push `main`. Ajouter une stack = ajouter son dossier dans `matrix.stack`.
+- `.github/workflows/terraform.yml` — un job par stack, chaîné par `needs` (`backend` → `oidc` → `workspace`) pour que les APIs/IAM posés par `oidc/` existent avant les stacks qui en dépendent. Chaque job appelle le workflow réutilisable `tf-stack.yml` : `fmt`/`init`/`validate`/`plan` sur PR (plan posté en commentaire), `apply` sur push `main`, échec explicite si un secret manque, un SA par stack (`sa_secret`), auth par Workload Identity Federation (aucune clé JSON dans GitHub).
 
 ## Bootstrap (une seule fois, en local)
 
@@ -82,4 +82,4 @@ Diagnostic qui a tranché : `gcloud logging read 'protoPayload.methodName="Updat
 ## Ajouter une stack
 
 1. Créer `<stack>/` avec un bloc `backend "gcs" { bucket = "mkz-me-tfstate" prefix = "<stack>" }` (cf. output `backend_snippet`).
-2. L'ajouter à `matrix.stack` et aux `paths` du workflow.
+2. Ajouter un job dans `terraform.yml` appelant `tf-stack.yml`, avec `needs: oidc` et le `sa_secret` adapté.

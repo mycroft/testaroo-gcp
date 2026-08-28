@@ -1,0 +1,79 @@
+# Workflow réutilisable : fmt/init/validate/plan (+ apply sur main) pour une stack.
+name: tf-stack
+
+on:
+  workflow_call:
+    inputs:
+      stack:
+        description: Répertoire de la stack
+        required: true
+        type: string
+      sa_secret:
+        description: Nom du secret contenant l'email du SA à impersonner
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "0"
+
+jobs:
+  terraform:
+    name: ${{ inputs.stack }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.stack }}
+    concurrency:
+      group: terraform-${{ inputs.stack }}
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check secrets
+        env:
+          SA: ${{ secrets[inputs.sa_secret] }}
+          WIP: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+        run: |
+          [ -n "$WIP" ] || { echo "::error::secret GCP_WORKLOAD_IDENTITY_PROVIDER manquant"; exit 1; }
+          [ -n "$SA" ]  || { echo "::error::secret ${{ inputs.sa_secret }} manquant"; exit 1; }
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets[inputs.sa_secret] }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.x"
+          terraform_wrapper: false
+
+      - run: terraform fmt -check -recursive
+      - run: terraform init
+      - run: terraform validate
+
+      - name: terraform plan
+        run: terraform plan -no-color -out=tfplan | tee plan.txt
+
+      - name: Comment plan on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync('${{ inputs.stack }}/plan.txt', 'utf8').slice(-60000);
+            await github.rest.issues.createComment({
+              ...context.repo,
+              issue_number: context.issue.number,
+              body: `### terraform plan — \`${{ inputs.stack }}\`\n<details><summary>Afficher</summary>\n\n\`\`\`\n${plan}\n\`\`\`\n</details>`,
+            });
+
+      - name: terraform apply
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: terraform apply -auto-approve tfplan
