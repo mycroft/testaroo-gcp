@@ -2,6 +2,10 @@ terramate {
   required_version = ">= 0.17"
 
   config {
+    cloud {
+      organization = "chocapic"
+    }
+
     git {
       default_branch = "main"
       default_remote = "origin"

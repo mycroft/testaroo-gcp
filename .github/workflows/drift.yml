@@ -1,0 +1,57 @@
+name: drift
+
+on:
+  schedule:
+    - cron: "0 2 * * *" # 02:00 UTC, comme tf-aws
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - stack: backend
+            sa_secret: GCP_SERVICE_ACCOUNT
+          - stack: oidc
+            sa_secret: GCP_SERVICE_ACCOUNT
+          - stack: workspace
+            sa_secret: GCP_WORKSPACE_SERVICE_ACCOUNT
+          - stack: github
+            sa_secret: GCP_SERVICE_ACCOUNT
+            github_token_secret: GH_TF_TOKEN
+    defaults:
+      run:
+        working-directory: ${{ matrix.stack }}
+    env:
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "0"
+      GITHUB_TOKEN: ${{ matrix.github_token_secret && secrets[matrix.github_token_secret] || '' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: terramate-io/terramate-action@v3
+        with:
+          version: 0.17.2
+          use_wrapper: false
+          cloud_organization: chocapic
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets[matrix.sa_secret] }}
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "1.9.x"
+          terraform_wrapper: false
+      - run: terraform init
+      # -detailed-exitcode : 0 = pas de dérive, 2 = dérive (échec du job), 1 = erreur.
+      - name: drift check
+        run: |
+          terramate run --sync-drift-status --terraform-plan-file=tfplan -- \
+            terraform plan -no-color -detailed-exitcode -out=tfplan

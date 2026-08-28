@@ -42,6 +42,14 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # Terramate a besoin de l'historique pour la synchro Cloud
+
+      - uses: terramate-io/terramate-action@v3
+        with:
+          version: 0.17.2
+          use_wrapper: false
+          cloud_organization: chocapic
 
       - name: Check secrets
         env:
@@ -68,7 +76,17 @@ jobs:
       - run: terraform init
       - run: terraform validate
 
+      # Lancé depuis le dossier de la stack, `terramate run` n'exécute que celle-ci.
+      # --sync-preview / --sync-deployment publient plan et résultat sur Terramate Cloud
+      # (auth OIDC GitHub, aucun secret).
       - name: terraform plan
+        if: github.event_name == 'pull_request'
+        run: |
+          terramate run --sync-preview --terraform-plan-file=tfplan -- \
+            terraform plan -no-color -out=tfplan | tee plan.txt
+
+      - name: terraform plan (main)
+        if: github.event_name == 'push'
         run: terraform plan -no-color -out=tfplan | tee plan.txt
 
       - name: Comment plan on PR
@@ -86,4 +104,6 @@ jobs:
 
       - name: terraform apply
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: terraform apply -auto-approve tfplan
+        run: |
+          terramate run --sync-deployment --terraform-plan-file=tfplan -- \
+            terraform apply -auto-approve tfplan

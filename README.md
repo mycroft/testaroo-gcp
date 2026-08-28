@@ -112,4 +112,12 @@ terramate list --changed       # celles modifiées vs main (ou HEAD^ sur main)
 terramate run --changed -- terraform plan   # équivalent local de la CI
 ```
 
+### Terramate Cloud
+
+Organisation `chocapic` (`terramate.tm.hcl` → `cloud.organization`), dépôt connecté via l'app GitHub Terramate, auth CI par OIDC GitHub (`id-token: write`, aucun secret). Ce qui remonte dans l'UI :
+
+- **Previews** : sur PR, `tf-stack.yml` lance `terramate run --sync-preview` depuis le dossier de la stack (donc pour cette seule stack), avec le plan attaché.
+- **Deployments** : sur `main`, `terramate run --sync-deployment` autour de l'apply.
+- **Drift** : `drift.yml`, tous les jours à 02:00 UTC et à la demande, `terraform plan -detailed-exitcode` via `--sync-drift-status` sur les 4 stacks ; le job échoue (code 2) s'il y a dérive.
+
 Étape suivante possible (niveau « B ») : remplacer les jobs par un seul `terramate run` ; il faudra alors régler l'impersonation d'un SA différent par stack.
