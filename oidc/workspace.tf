@@ -14,6 +14,7 @@
 resource "google_project_service" "workspace_apis" {
   for_each = toset([
     "admin.googleapis.com",
+    "groupssettings.googleapis.com",
     "cloudidentity.googleapis.com",
   ])
 
