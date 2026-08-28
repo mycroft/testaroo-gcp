@@ -4,6 +4,7 @@ terramate {
   config {
     cloud {
       organization = "chocapic"
+      location     = "eu"
     }
 
     git {
