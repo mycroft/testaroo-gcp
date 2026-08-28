@@ -53,6 +53,8 @@ terraform output -raw gh_secrets_commands | sh   # crée les 2 secrets GitHub
 
 Secrets créés : `GCP_WORKLOAD_IDENTITY_PROVIDER` et `GCP_SERVICE_ACCOUNT`. Ensuite CI se suffit à elle-même, y compris pour modifier `oidc/`.
 
+La première exécution CI juste après l'apply peut échouer avec `Permission 'iam.serviceAccounts.getAccessToken' denied` : c'est la propagation IAM (quelques minutes) sur le SA et le pool fraîchement créés, pas une erreur de config. Relancer le job. Si ça persiste, vérifier que les secrets correspondent aux outputs (`terraform output`) — l'action `auth` n'échange pas le token, la première erreur remonte donc au premier appel Terraform.
+
 Garde-fous : `attribute_condition` limite le provider à `mycroft/testaroo-gcp` ; le binding `workloadIdentityUser` est aussi scopé à ce dépôt. Les rôles projet (`oidc/variables.tf`, `project_roles`) sont larges parce que le SA gère l'IAM lui-même — à réduire ou à splitter en SA plan (lecture) / SA apply (écriture) quand tu voudras aller plus loin.
 
 ## Ajouter une stack
