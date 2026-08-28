@@ -45,3 +45,9 @@ variable "project_roles" {
     "roles/resourcemanager.projectIamAdmin", # bindings projet (oidc/)
   ]
 }
+
+variable "workspace_service_account_id" {
+  description = "ID du service account dédié à Google Workspace (aucun rôle GCP)."
+  type        = string
+  default     = "github-workspace"
+}
