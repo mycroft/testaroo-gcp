@@ -11,8 +11,26 @@ Bac à sable Terraform sur le projet GCP `mkz-me`, avec plan automatique sur PR 
 
 Le bucket ne peut pas stocker son propre state avant d'exister : premier apply en state local, puis migration.
 
+`gcloud auth` ne fixe pas de projet : l'auth c'est l'identité, le projet se règle à part. Terraform utilise les ADC (Application Default Credentials) et le `project_id` de la config (`mkz-me` par défaut dans `variables.tf`), pas `gcloud config`.
+
 ```sh
-gcloud auth application-default login
+gcloud auth login                                          # compte perso, pour la CLI gcloud
+gcloud auth application-default login                      # ADC, utilisés par Terraform
+gcloud config set project mkz-me                           # projet par défaut de gcloud
+gcloud auth application-default set-quota-project mkz-me   # projet de quota des ADC
+gcloud config list && gcloud auth list                     # vérification
+```
+
+Pour ne pas mélanger avec un compte pro, utiliser une configuration nommée :
+
+```sh
+gcloud config configurations create perso
+gcloud config set account <email-perso>
+gcloud config set project mkz-me
+gcloud config configurations activate perso   # ou `default` pour revenir
+```
+
+```sh
 cd backend
 terraform init
 terraform apply
