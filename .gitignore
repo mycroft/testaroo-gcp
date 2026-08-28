@@ -4,3 +4,7 @@
 *.tfvars.json
 crash.log
 .terraform.lock.hcl.bak
+# artefacts CI
+tfplan
+plan.txt
+gha-creds-*.json
