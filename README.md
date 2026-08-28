@@ -6,6 +6,7 @@ Bac à sable Terraform sur le projet GCP `mkz-me`, avec plan automatique sur PR 
 
 - `backend/` — bucket GCS `mkz-me-tfstate` qui héberge le state de toutes les stacks (versioning + rétention 20 versions, accès public interdit, `prevent_destroy`).
 - `oidc/` — Workload Identity Federation : pool + provider OIDC GitHub restreint au dépôt, service account `github-terraform` impersonable par le repo, rôles projet et accès au bucket de state.
+- `workspace/` — groupes Google Workspace du domaine `au-tapas-ecossais.com` via le provider `googleworkspace`, module `modules/group` calqué sur `tf-it`. Impersonne le SA dédié `github-workspace` (aucun rôle GCP, rôle Groups Admin côté Workspace).
 - `.github/workflows/terraform.yml` — `fmt`/`init`/`validate`/`plan` sur PR (plan posté en commentaire), `apply` sur push `main`. Ajouter une stack = ajouter son dossier dans `matrix.stack`.
 
 ## Bootstrap (une seule fois, en local)
@@ -56,6 +57,27 @@ Secrets créés : `GCP_WORKLOAD_IDENTITY_PROVIDER` et `GCP_SERVICE_ACCOUNT`. Ens
 La première exécution CI juste après l'apply peut échouer avec `Permission 'iam.serviceAccounts.getAccessToken' denied` : c'est la propagation IAM (quelques minutes) sur le SA et le pool fraîchement créés, pas une erreur de config. Relancer le job. Si ça persiste, vérifier que les secrets correspondent aux outputs (`terraform output`) — l'action `auth` n'échange pas le token, la première erreur remonte donc au premier appel Terraform.
 
 Garde-fous : `attribute_condition` limite le provider à `mycroft/testaroo-gcp` ; le binding `workloadIdentityUser` est aussi scopé à ce dépôt. Les rôles projet (`oidc/variables.tf`, `project_roles`) sont larges parce que le SA gère l'IAM lui-même — à réduire ou à splitter en SA plan (lecture) / SA apply (écriture) quand tu voudras aller plus loin.
+
+## Google Workspace
+
+Prérequis manuels (une fois) :
+
+1. Cloud Identity Free souscrit et domaine vérifié ; l'Organisation GCP apparaît au premier login console avec un compte du domaine (`gcloud organizations list`).
+2. `oidc/` appliqué (crée `github-workspace@mkz-me.iam.gserviceaccount.com` et active `admin.googleapis.com`).
+3. Dans `admin.google.com` → Compte → Rôles admin → **Groups Admin** et **User Management Admin** → Attribuer un service account : coller `terraform -chdir=oidc output -raw workspace_service_account_email`. Sans domain-wide delegation : le SA agit en son nom.
+4. `gh secret set GCP_WORKSPACE_SERVICE_ACCOUNT --repo mycroft/testaroo-gcp --body "$(terraform -chdir=oidc output -raw workspace_service_account_email)"`
+
+Utilisateurs (`users.tf`) et groupes/membres (`groups.tf`) sont déclarés dans des `locals` ; les mots de passe initiaux sont générés (`random_password`), stockés dans le state GCS et ignorés ensuite. Pour les OU, ajouter le scope `admin.directory.orgunit`.
+
+### Rattacher `mkz-me` à l'organisation (fait le 2026-08-28)
+
+Le projet a été créé hors org par un compte `@gmail.com`. Pièges rencontrés :
+
+- `SOLO_MUST_INVITE_OWNERS` : hors org, un nouveau owner doit être invité via la console. Contourné en donnant `roles/resourcemanager.projectMover` **et** `roles/resourcemanager.projectIamAdmin` au compte admin du domaine — le move (`UpdateProject` avec nouveau parent) exige `projects.update` et `projects.setIamPolicy`, visible dans l'audit log du projet.
+- `organizationAdmin` n'inclut ni `projects.create` ni la gestion des org policies : ajouter `roles/resourcemanager.projectCreator` et `roles/orgpolicy.policyAdmin` sur l'org.
+- Org policies par défaut d'une nouvelle org : `iam.allowedPolicyMemberDomains` (reset, à remettre une fois le gmail retiré du projet) et `resourcemanager.allowedImportSources` (ouverte avec `allowAll` le temps du move, puis supprimée).
+
+Diagnostic qui a tranché : `gcloud logging read 'protoPayload.methodName="UpdateProject"' --project mkz-me --format=json` → `authorizationInfo[].granted`.
 
 ## Ajouter une stack
 

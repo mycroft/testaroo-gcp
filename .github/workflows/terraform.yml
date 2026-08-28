@@ -2,10 +2,10 @@ name: terraform
 
 on:
   pull_request:
-    paths: ["backend/**", "oidc/**", ".github/workflows/terraform.yml"]
+    paths: ["backend/**", "oidc/**", "workspace/**", ".github/workflows/terraform.yml"]
   push:
     branches: [main]
-    paths: ["backend/**", "oidc/**", ".github/workflows/terraform.yml"]
+    paths: ["backend/**", "oidc/**", "workspace/**", ".github/workflows/terraform.yml"]
 
 permissions:
   contents: read
@@ -21,7 +21,13 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        stack: [backend, oidc]
+        include:
+          - stack: backend
+            sa_secret: GCP_SERVICE_ACCOUNT
+          - stack: oidc
+            sa_secret: GCP_SERVICE_ACCOUNT
+          - stack: workspace
+            sa_secret: GCP_WORKSPACE_SERVICE_ACCOUNT
     defaults:
       run:
         working-directory: ${{ matrix.stack }}
@@ -35,7 +41,7 @@ jobs:
       - uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          service_account: ${{ secrets[matrix.sa_secret] }}
 
       - uses: hashicorp/setup-terraform@v3
         with:
