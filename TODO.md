@@ -20,4 +20,5 @@ Dette assumée pendant le POC, à reprendre.
 
 ## CI
 
-- [ ] Ne planifier que les stacks modifiées (terramate change detection) au lieu de quatre plans à chaque push.
+- [x] Ne planifier que les stacks modifiées (terramate change detection) — fait le 2026-08-28, niveau A.
+- [ ] Terramate niveau B : un seul `terramate run` orchestré, avec impersonation d'un SA différent par stack.

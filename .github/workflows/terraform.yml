@@ -11,9 +11,33 @@ permissions:
   id-token: write
   pull-requests: write
 
-# Ordre = dépendances : backend (bucket de state) -> oidc (SA, APIs, IAM) -> stacks applicatives.
 jobs:
+  # Terramate compare avec la base git (main sur une PR, HEAD^ sur main) et
+  # liste les stacks dont les fichiers — ou les modules locaux référencés — ont changé.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      stacks: ${{ steps.list.outputs.stacks }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # nécessaire à la détection de changements
+      - uses: terramate-io/terramate-action@v3
+        with:
+          version: 0.17.2
+          use_wrapper: false
+      - id: list
+        run: |
+          stacks=$(terramate list --changed | jq -R . | jq -sc .)
+          echo "stacks=$stacks" >> "$GITHUB_OUTPUT"
+          echo "Stacks modifiées : $stacks"
+
+  # Ordre = dépendances : backend -> oidc -> {workspace, github}.
+  # `!failure() && !cancelled()` : un parent *skipped* (non modifié) ne bloque pas
+  # ses dépendants ; un parent en échec les bloque.
   backend:
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.stacks), 'backend')
     uses: ./.github/workflows/tf-stack.yml
     secrets: inherit
     with:
@@ -21,7 +45,8 @@ jobs:
       sa_secret: GCP_SERVICE_ACCOUNT
 
   oidc:
-    needs: backend
+    needs: [changes, backend]
+    if: ${{ !failure() && !cancelled() && contains(fromJSON(needs.changes.outputs.stacks), 'oidc') }}
     uses: ./.github/workflows/tf-stack.yml
     secrets: inherit
     with:
@@ -29,7 +54,8 @@ jobs:
       sa_secret: GCP_SERVICE_ACCOUNT
 
   workspace:
-    needs: oidc
+    needs: [changes, oidc]
+    if: ${{ !failure() && !cancelled() && contains(fromJSON(needs.changes.outputs.stacks), 'workspace') }}
     uses: ./.github/workflows/tf-stack.yml
     secrets: inherit
     with:
@@ -37,7 +63,8 @@ jobs:
       sa_secret: GCP_WORKSPACE_SERVICE_ACCOUNT
 
   github:
-    needs: oidc
+    needs: [changes, oidc]
+    if: ${{ !failure() && !cancelled() && contains(fromJSON(needs.changes.outputs.stacks), 'github') }}
     uses: ./.github/workflows/tf-stack.yml
     secrets: inherit
     with:

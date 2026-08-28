@@ -8,7 +8,7 @@ Bac à sable Terraform sur le projet GCP `mkz-me`, avec plan automatique sur PR 
 - `oidc/` — Workload Identity Federation : pool + provider OIDC GitHub restreint au dépôt, service account `github-terraform` impersonable par le repo, rôles projet et accès au bucket de state.
 - `workspace/` — groupes Google Workspace du domaine `au-tapas-ecossais.com` via le provider `googleworkspace`, module `modules/group` calqué sur `tf-it`. Impersonne le SA dédié `github-workspace` (aucun rôle GCP, rôle Groups Admin côté Workspace).
 - `github/` — dépôts GitHub du compte `mycroft` via le provider `integrations/github`, module `modules/repository` calqué sur `tf-it/modules/github_private_repository` (squash/rebase, branche par défaut, ruleset : pas de suppression ni force-push, PR obligatoire, checks optionnels). Gère `mycroft/testaroo-github`. State via `github-terraform`.
-- `.github/workflows/terraform.yml` — un job par stack, chaîné par `needs` (`backend` → `oidc` → `workspace`) pour que les APIs/IAM posés par `oidc/` existent avant les stacks qui en dépendent. Chaque job appelle le workflow réutilisable `tf-stack.yml` : `fmt`/`init`/`validate`/`plan` sur PR (plan posté en commentaire), `apply` sur push `main`, échec explicite si un secret manque, un SA par stack (`sa_secret`), auth par Workload Identity Federation (aucune clé JSON dans GitHub).
+- `.github/workflows/terraform.yml` — un job `changes` (Terramate `list --changed`) détermine les stacks modifiées, puis un job par stack, chaîné par `needs` (`backend` → `oidc` → `workspace`/`github`) et exécuté seulement si sa stack a changé. Chaque job appelle le workflow réutilisable `tf-stack.yml` : `fmt`/`init`/`validate`/`plan` sur PR (plan posté en commentaire), `apply` sur push `main`, échec explicite si un secret manque, un SA par stack (`sa_secret`), auth par Workload Identity Federation (aucune clé JSON dans GitHub).
 
 ## Bootstrap (une seule fois, en local)
 
@@ -99,4 +99,17 @@ Limites d'un compte perso par rapport à tf-it : pas d'équipes (`github_team*`)
 ## Ajouter une stack
 
 1. Créer `<stack>/` avec un bloc `backend "gcs" { bucket = "mkz-me-tfstate" prefix = "<stack>" }` (cf. output `backend_snippet`).
-2. Ajouter un job dans `terraform.yml` appelant `tf-stack.yml`, avec `needs: oidc` et le `sa_secret` adapté.
+2. Ajouter `<stack>/stack.tm.hcl` (`terramate create <stack> --after /oidc` le génère avec un id).
+3. Ajouter un job dans `terraform.yml` appelant `tf-stack.yml`, avec `needs: [changes, oidc]`, la condition `contains(...)` sur le nom de la stack et le `sa_secret` adapté.
+
+## Terramate
+
+Utilisé uniquement pour la détection de changements (niveau « A ») ; l'orchestration reste dans GitHub Actions. Racine : `terramate.tm.hcl` (base `main`, seuls les commits comptent). Une stack = un dossier avec `stack.tm.hcl` ; `after` documente les dépendances, ce que `needs` reflète dans le workflow.
+
+```sh
+terramate list                 # toutes les stacks, dans l'ordre du graphe
+terramate list --changed       # celles modifiées vs main (ou HEAD^ sur main)
+terramate run --changed -- terraform plan   # équivalent local de la CI
+```
+
+Étape suivante possible (niveau « B ») : remplacer les jobs par un seul `terramate run` ; il faudra alors régler l'impersonation d'un SA différent par stack.
