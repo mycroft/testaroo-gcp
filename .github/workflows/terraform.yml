@@ -5,6 +5,12 @@ on:
   push:
     branches: [main]
 
+# Le workflow appelant doit accorder au moins ce que tf-stack.yml demande.
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+
 # Ordre = dépendances : backend (bucket de state) -> oidc (SA, APIs, IAM) -> stacks applicatives.
 jobs:
   backend:
