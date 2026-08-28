@@ -34,3 +34,10 @@ resource "google_service_account_iam_member" "workspace_wif" {
   role               = "roles/iam.workloadIdentityUser"
   member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository/${var.github_repository}"
 }
+
+# Lecture/écriture du state de la stack workspace/.
+resource "google_storage_bucket_iam_member" "workspace_state" {
+  bucket = var.state_bucket
+  role   = "roles/storage.objectAdmin"
+  member = google_service_account.workspace.member
+}
