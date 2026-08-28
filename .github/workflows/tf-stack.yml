@@ -12,6 +12,11 @@ on:
         description: Nom du secret contenant l'email du SA à impersonner
         required: true
         type: string
+      github_token_secret:
+        description: Nom du secret contenant un token GitHub pour le provider github (optionnel)
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -21,6 +26,8 @@ permissions:
 env:
   TF_IN_AUTOMATION: "true"
   TF_INPUT: "0"
+  # Vide si github_token_secret n'est pas fourni ; le provider github l'ignore alors.
+  GITHUB_TOKEN: ${{ inputs.github_token_secret != '' && secrets[inputs.github_token_secret] || '' }}
 
 jobs:
   terraform:
@@ -43,6 +50,9 @@ jobs:
         run: |
           [ -n "$WIP" ] || { echo "::error::secret GCP_WORKLOAD_IDENTITY_PROVIDER manquant"; exit 1; }
           [ -n "$SA" ]  || { echo "::error::secret ${{ inputs.sa_secret }} manquant"; exit 1; }
+          if [ -n "${{ inputs.github_token_secret }}" ] && [ -z "$GITHUB_TOKEN" ]; then
+            echo "::error::secret ${{ inputs.github_token_secret }} manquant"; exit 1
+          fi
 
       - uses: google-github-actions/auth@v3
         with:

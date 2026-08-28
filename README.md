@@ -7,6 +7,7 @@ Bac à sable Terraform sur le projet GCP `mkz-me`, avec plan automatique sur PR 
 - `backend/` — bucket GCS `mkz-me-tfstate` qui héberge le state de toutes les stacks (versioning + rétention 20 versions, accès public interdit, `prevent_destroy`).
 - `oidc/` — Workload Identity Federation : pool + provider OIDC GitHub restreint au dépôt, service account `github-terraform` impersonable par le repo, rôles projet et accès au bucket de state.
 - `workspace/` — groupes Google Workspace du domaine `au-tapas-ecossais.com` via le provider `googleworkspace`, module `modules/group` calqué sur `tf-it`. Impersonne le SA dédié `github-workspace` (aucun rôle GCP, rôle Groups Admin côté Workspace).
+- `github/` — dépôts GitHub du compte `mycroft` via le provider `integrations/github`, module `modules/repository` calqué sur `tf-it/modules/github_private_repository` (squash/rebase, branche par défaut, ruleset : pas de suppression ni force-push, PR obligatoire, checks optionnels). Gère `mycroft/testaroo-github`. State via `github-terraform`.
 - `.github/workflows/terraform.yml` — un job par stack, chaîné par `needs` (`backend` → `oidc` → `workspace`) pour que les APIs/IAM posés par `oidc/` existent avant les stacks qui en dépendent. Chaque job appelle le workflow réutilisable `tf-stack.yml` : `fmt`/`init`/`validate`/`plan` sur PR (plan posté en commentaire), `apply` sur push `main`, échec explicite si un secret manque, un SA par stack (`sa_secret`), auth par Workload Identity Federation (aucune clé JSON dans GitHub).
 
 ## Bootstrap (une seule fois, en local)
@@ -78,6 +79,22 @@ Le projet a été créé hors org par un compte `@gmail.com`. Pièges rencontré
 - Org policies par défaut d'une nouvelle org : `iam.allowedPolicyMemberDomains` (reset, à remettre une fois le gmail retiré du projet) et `resourcemanager.allowedImportSources` (ouverte avec `allowAll` le temps du move, puis supprimée).
 
 Diagnostic qui a tranché : `gcloud logging read 'protoPayload.methodName="UpdateProject"' --project mkz-me --format=json` → `authorizationInfo[].granted`.
+
+## GitHub
+
+Le provider `github` s'authentifie par `GITHUB_TOKEN`. Le `GITHUB_TOKEN` automatique d'Actions ne peut pas créer de dépôts : il faut un **fine-grained PAT** (Settings → Developer settings → Personal access tokens → Fine-grained), périmètre minimal :
+
+- Resource owner : `mycroft` ; Repository access : *All repositories* (nécessaire pour en créer) ;
+- Permissions : Administration (read/write), Contents (read/write), Metadata (read).
+- Expiration courte (90 j max) ; noter la date et la renouveler — c'est le seul secret long-lived du dépôt, GitHub n'offrant pas d'OIDC vers sa propre API pour un compte perso. Sur une organisation, préférer une GitHub App.
+
+```sh
+gh secret set GH_TF_TOKEN --repo mycroft/testaroo-gcp   # coller le PAT
+```
+
+En local : `set -x GITHUB_TOKEN (gh auth token)` suffit (le token `gh` a les scopes `repo`), avec les ADC/impersonation `github-terraform` pour le state.
+
+Limites d'un compte perso par rapport à tf-it : pas d'équipes (`github_team*`), donc pas de `github_team_repository` ; les rulesets sur dépôt **privé** exigent GitHub Pro — `testaroo-github` est donc public.
 
 ## Ajouter une stack
 

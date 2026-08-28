@@ -35,3 +35,12 @@ jobs:
     with:
       stack: workspace
       sa_secret: GCP_WORKSPACE_SERVICE_ACCOUNT
+
+  github:
+    needs: oidc
+    uses: ./.github/workflows/tf-stack.yml
+    secrets: inherit
+    with:
+      stack: github
+      sa_secret: GCP_SERVICE_ACCOUNT
+      github_token_secret: GH_TF_TOKEN
