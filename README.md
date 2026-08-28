@@ -5,6 +5,7 @@ Bac à sable Terraform sur le projet GCP `mkz-me`, avec plan automatique sur PR 
 ## Layout
 
 - `backend/` — bucket GCS `mkz-me-tfstate` qui héberge le state de toutes les stacks (versioning + rétention 20 versions, accès public interdit, `prevent_destroy`).
+- `oidc/` — Workload Identity Federation : pool + provider OIDC GitHub restreint au dépôt, service account `github-terraform` impersonable par le repo, rôles projet et accès au bucket de state.
 - `.github/workflows/terraform.yml` — `fmt`/`init`/`validate`/`plan` sur PR (plan posté en commentaire), `apply` sur push `main`. Ajouter une stack = ajouter son dossier dans `matrix.stack`.
 
 ## Bootstrap (une seule fois, en local)
@@ -41,16 +42,18 @@ rm -f terraform.tfstate terraform.tfstate.backup
 
 ## Auth GitHub Actions (Workload Identity Federation)
 
-Pas de clé de service account dans GitHub. À créer une fois dans `mkz-me` (à terraformer ensuite dans une stack `iam/`) :
+Pas de clé de service account dans GitHub : le runner échange son token OIDC GitHub contre un token GCP en impersonnant `github-terraform@mkz-me.iam.gserviceaccount.com`. Tout est dans `oidc/` ; le premier apply se fait en local avec tes ADC (le SA n'existe pas encore pour que CI le fasse).
 
-1. Un service account `github-terraform@mkz-me.iam.gserviceaccount.com` avec `roles/storage.admin` (limiter au bucket plus tard) et `roles/serviceusage.serviceUsageAdmin`.
-2. Un Workload Identity Pool + provider OIDC GitHub (`https://token.actions.githubusercontent.com`), condition `assertion.repository == "mycroft/testaroo-gcp"`.
-3. Binding `roles/iam.workloadIdentityUser` du SA vers `principalSet://.../attribute.repository/mycroft/testaroo-gcp`.
+```sh
+cd oidc
+terraform init
+terraform apply
+terraform output -raw gh_secrets_commands | sh   # crée les 2 secrets GitHub
+```
 
-Secrets GitHub à renseigner :
+Secrets créés : `GCP_WORKLOAD_IDENTITY_PROVIDER` et `GCP_SERVICE_ACCOUNT`. Ensuite CI se suffit à elle-même, y compris pour modifier `oidc/`.
 
-- `GCP_WORKLOAD_IDENTITY_PROVIDER` — `projects/<project-number>/locations/global/workloadIdentityPools/<pool>/providers/<provider>`
-- `GCP_SERVICE_ACCOUNT` — email du service account ci-dessus
+Garde-fous : `attribute_condition` limite le provider à `mycroft/testaroo-gcp` ; le binding `workloadIdentityUser` est aussi scopé à ce dépôt. Les rôles projet (`oidc/variables.tf`, `project_roles`) sont larges parce que le SA gère l'IAM lui-même — à réduire ou à splitter en SA plan (lecture) / SA apply (écriture) quand tu voudras aller plus loin.
 
 ## Ajouter une stack
 

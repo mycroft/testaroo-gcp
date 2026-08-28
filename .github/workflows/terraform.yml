@@ -2,10 +2,10 @@ name: terraform
 
 on:
   pull_request:
-    paths: ["backend/**", ".github/workflows/terraform.yml"]
+    paths: ["backend/**", "oidc/**", ".github/workflows/terraform.yml"]
   push:
     branches: [main]
-    paths: ["backend/**", ".github/workflows/terraform.yml"]
+    paths: ["backend/**", "oidc/**", ".github/workflows/terraform.yml"]
 
 permissions:
   contents: read
@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        stack: [backend]
+        stack: [backend, oidc]
     defaults:
       run:
         working-directory: ${{ matrix.stack }}
@@ -40,6 +40,7 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.9.x"
+          terraform_wrapper: false
 
       - run: terraform fmt -check -recursive
       - run: terraform init
